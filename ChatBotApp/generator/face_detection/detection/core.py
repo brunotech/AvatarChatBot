@@ -19,10 +19,9 @@ class FaceDetector(object):
         self.device = device
         self.verbose = verbose
 
-        if verbose:
-            if 'cpu' in device:
-                logger = logging.getLogger(__name__)
-                logger.warning("Detection running on CPU, this may be potentially slow.")
+        if verbose and 'cpu' in device:
+            logger = logging.getLogger(__name__)
+            logger.warning("Detection running on CPU, this may be potentially slow.")
 
         if 'cpu' not in device and 'cuda' not in device:
             if verbose:
@@ -120,11 +119,19 @@ class FaceDetector(object):
             tensor_or_path {numpy.ndarray, torch.tensor or string} -- path to the image, or the image itself
         """
         if isinstance(tensor_or_path, str):
-            return cv2.imread(tensor_or_path) if not rgb else cv2.imread(tensor_or_path)[..., ::-1]
+            return (
+                cv2.imread(tensor_or_path)[..., ::-1]
+                if rgb
+                else cv2.imread(tensor_or_path)
+            )
         elif torch.is_tensor(tensor_or_path):
             # Call cpu in case its coming from cuda
-            return tensor_or_path.cpu().numpy()[..., ::-1].copy() if not rgb else tensor_or_path.cpu().numpy()
+            return (
+                tensor_or_path.cpu().numpy()
+                if rgb
+                else tensor_or_path.cpu().numpy()[..., ::-1].copy()
+            )
         elif isinstance(tensor_or_path, np.ndarray):
-            return tensor_or_path[..., ::-1].copy() if not rgb else tensor_or_path
+            return tensor_or_path if rgb else tensor_or_path[..., ::-1].copy()
         else:
             raise TypeError

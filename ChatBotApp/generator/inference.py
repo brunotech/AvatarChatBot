@@ -11,14 +11,11 @@ from ChatBotApp.generator.hparams import hparams as hp
 
 def genRandString():
 	letters = string.ascii_lowercase
-	return ''.join(random.choice(letters) for i in range (10)) + '.mp4'
+	return ''.join(random.choice(letters) for _ in range (10)) + '.mp4'
 
 def get_smoothened_boxes(boxes, T):
 	for i in range(len(boxes)):
-		if i + T > len(boxes):
-			window = boxes[len(boxes) - T:]
-		else:
-			window = boxes[i : i + T]
+		window = boxes[len(boxes) - T:] if i + T > len(boxes) else boxes[i : i + T]
 		boxes[i] = np.mean(window, axis=0)
 	return boxes
 
@@ -27,7 +24,7 @@ def face_detect(images):
 											flip_input=False, device=device)
 
 	batch_size = hp.face_det_batch_size
-	
+
 	while 1:
 		predictions = []
 		try:
@@ -37,7 +34,7 @@ def face_detect(images):
 			if batch_size == 1: 
 				raise RuntimeError('Image too big to run face detection on GPU. Please use the --resize_factor argument')
 			batch_size //= 2
-			print('Recovering from OOM error; New batch size: {}'.format(batch_size))
+			print(f'Recovering from OOM error; New batch size: {batch_size}')
 			continue
 		break
 
@@ -52,7 +49,7 @@ def face_detect(images):
 		y2 = min(image.shape[0], rect[3] + pady2)
 		x1 = max(0, rect[0] - padx1)
 		x2 = min(image.shape[1], rect[2] + padx2)
-		
+
 		results.append([x1, y1, x2, y2])
 
 	boxes = np.array(results)
@@ -66,10 +63,7 @@ def datagen(frames, mels, static):
 	img_batch, mel_batch, frame_batch, coords_batch = [], [], [], []
 
 	if hp.box[0] == -1:
-		if not static:
-			face_det_results = face_detect(frames) # BGR2RGB for CNN face detection
-		else:
-			face_det_results = face_detect([frames[0]])
+		face_det_results = face_detect([frames[0]]) if static else face_detect(frames)
 	else:
 		print('Using the specified bounding box instead of face detection...')
 		y1, y2, x1, x2 = hp.box
@@ -81,7 +75,7 @@ def datagen(frames, mels, static):
 		face, coords = face_det_results[idx].copy()
 
 		face = cv2.resize(face, (hp.img_size, hp.img_size))
-			
+
 		img_batch.append(face)
 		mel_batch.append(m)
 		frame_batch.append(frame_to_save)
@@ -113,24 +107,23 @@ def datagen(frames, mels, static):
 mel_step_size = 16
 # device = 'cuda' if torch.cuda.is_available() else 'cpu'
 device = 'cpu'
-print('Using {} for inference.'.format(device))
+print(f'Using {device} for inference.')
 
 def _load(checkpoint_path):
-	if device == 'cuda':
-		checkpoint = torch.load(checkpoint_path)
-	else:
-		checkpoint = torch.load(checkpoint_path,
-								map_location=lambda storage, loc: storage)
-	return checkpoint
+	return (
+		torch.load(checkpoint_path)
+		if device == 'cuda'
+		else torch.load(
+			checkpoint_path, map_location=lambda storage, loc: storage
+		)
+	)
 
 def load_model(path):
 	model = Wav2Lip()
-	print("Load checkpoint from: {}".format(path))
+	print(f"Load checkpoint from: {path}")
 	checkpoint = _load(path)
 	s = checkpoint["state_dict"]
-	new_s = {}
-	for k, v in s.items():
-		new_s[k.replace('module.', '')] = v
+	new_s = {k.replace('module.', ''): v for k, v in s.items()}
 	model.load_state_dict(new_s)
 
 	model = model.to(device)
@@ -139,7 +132,7 @@ def load_model(path):
 
 def generate(face_path, input_audio, weights, rotate = False):
 	static = False
-	
+
 	if not path.isfile(face_path):
 		raise ValueError('--face argument must be a valid path to video/image file')
 
@@ -175,11 +168,11 @@ def generate(face_path, input_audio, weights, rotate = False):
 
 			full_frames.append(frame)
 
-	print ("Number of frames available for inference: "+str(len(full_frames)))
+	print(f"Number of frames available for inference: {len(full_frames)}")
 
 	if not input_audio.endswith('.wav'):
 		print('Extracting raw audio...')
-		command = 'ffmpeg -y -i {} -strict -2 {}'.format(input_audio, 'ChatBotApp/generator/temp/temp.wav')
+		command = f'ffmpeg -y -i {input_audio} -strict -2 ChatBotApp/generator/temp/temp.wav'
 
 		subprocess.call(command, shell=True)
 		input_audio = 'ChatBotApp/generator/temp/temp.wav'
@@ -192,7 +185,7 @@ def generate(face_path, input_audio, weights, rotate = False):
 		raise ValueError('Mel contains nan! Using a TTS voice? Add a small epsilon noise to the wav file and try again')
 
 	mel_chunks = []
-	mel_idx_multiplier = 80./fps 
+	mel_idx_multiplier = 80./fps
 	i = 0
 	while 1:
 		start_idx = int(i * mel_idx_multiplier)
@@ -202,7 +195,7 @@ def generate(face_path, input_audio, weights, rotate = False):
 		mel_chunks.append(mel[:, start_idx : start_idx + mel_step_size])
 		i += 1
 
-	print("Length of mel chunks: {}".format(len(mel_chunks)))
+	print(f"Length of mel chunks: {len(mel_chunks)}")
 
 	full_frames = full_frames[:len(mel_chunks)]
 
@@ -226,7 +219,7 @@ def generate(face_path, input_audio, weights, rotate = False):
 			pred = model(mel_batch, img_batch)
 
 		pred = pred.cpu().numpy().transpose(0, 2, 3, 1) * 255.
-		
+
 		for p, f, c in zip(pred, frames, coords):
 			y1, y2, x1, x2 = c
 			p = cv2.resize(p.astype(np.uint8), (x2 - x1, y2 - y1))
@@ -237,7 +230,7 @@ def generate(face_path, input_audio, weights, rotate = False):
 	out.release()
 
 	vidName = genRandString()
-	command = 'ffmpeg -y -i {} -i {} -strict -2 -q:v 1 {}'.format(input_audio, 'ChatBotApp/generator/temp/result.avi', hp.outfile + vidName)
+	command = f'ffmpeg -y -i {input_audio} -i ChatBotApp/generator/temp/result.avi -strict -2 -q:v 1 {hp.outfile + vidName}'
 	subprocess.call(command, shell=platform.system() != 'Windows')
 
 	return vidName

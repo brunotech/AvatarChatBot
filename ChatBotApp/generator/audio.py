@@ -10,9 +10,7 @@ def load_wav(path, sr):
     return librosa.core.load(path, sr=sr)[0]
 
 def preemphasis(wav, k, preemphasize=True):
-    if preemphasize:
-        return signal.lfilter([1, -k], [1], wav)
-    return wav
+    return signal.lfilter([1, -k], [1], wav) if preemphasize else wav
 
 def get_hop_size():
     hop_size = hp.hop_size
@@ -24,10 +22,8 @@ def get_hop_size():
 def melspectrogram(wav):
     D = _stft(preemphasis(wav, hp.preemphasis, hp.preemphasize))
     S = _amp_to_db(_linear_to_mel(np.abs(D))) - hp.ref_level_db
-    
-    if hp.signal_normalization:
-        return _normalize(S)
-    return S
+
+    return _normalize(S) if hp.signal_normalization else S
 
 def _lws_processor():
     import lws

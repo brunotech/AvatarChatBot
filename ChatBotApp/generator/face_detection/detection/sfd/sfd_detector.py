@@ -18,11 +18,11 @@ class SFDDetector(FaceDetector):
         super(SFDDetector, self).__init__(device, verbose)
 
         # Initialise the face detector
-        if not os.path.isfile(path_to_detector):
-            model_weights = load_url(models_urls['s3fd'])
-        else:
-            model_weights = torch.load(path_to_detector)
-
+        model_weights = (
+            torch.load(path_to_detector)
+            if os.path.isfile(path_to_detector)
+            else load_url(models_urls['s3fd'])
+        )
         self.face_detector = s3fd()
         self.face_detector.load_state_dict(model_weights)
         self.face_detector.to(device)
@@ -34,9 +34,7 @@ class SFDDetector(FaceDetector):
         bboxlist = detect(self.face_detector, image, device=self.device)
         keep = nms(bboxlist, 0.3)
         bboxlist = bboxlist[keep, :]
-        bboxlist = [x for x in bboxlist if x[-1] > 0.5]
-
-        return bboxlist
+        return [x for x in bboxlist if x[-1] > 0.5]
 
     def detect_from_batch(self, images):
         bboxlists = batch_detect(self.face_detector, images, device=self.device)
